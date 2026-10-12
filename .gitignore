@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv*/
+venv/
+
+# Builds and releases
+build/
+build-staging/
+dist/
+releases/
+*.exe
+*.zip
+
+# Models and caches (downloaded on first run)
+models/
+.cache/
+
+# Personal data: never commit
+data/
+*.log
+*.sqlite3
+cleanup-prompt.txt
+*-test.json
+self-test.json
+cleanup-results.json
+*.dpapi
+
+# Licensed fonts (injected at build time)
+assets/fonts/

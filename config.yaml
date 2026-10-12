@@ -1,0 +1,44 @@
+audio:
+  sample_rate: 16000
+  channels: 1
+  chunk_size: 1024
+  format: int16
+  max_recording_seconds: 600
+  mute_while_recording: true
+stt:
+  model: turbo
+  device: auto
+  compute_type: auto
+  language: en
+  beam_size: 5
+  vad_filter: true
+  vad_parameters:
+    min_silence_duration_ms: 500
+    speech_pad_ms: 400
+  cpu_compute_type: int8
+llm:
+  backend: ollama
+  ollama:
+    base_url: http://localhost:11434
+    model: llama3:instruct
+    timeout: 60
+    options:
+      temperature: 0.1
+      num_predict: 4096
+hotkeys:
+  dictation_trigger:
+  - ctrl
+  - cmd
+  polish_trigger:
+  - cmd
+  - alt
+  - e
+  recover_trigger:
+  - cmd
+  - alt
+  - s
+paste:
+  pre_paste_delay_ms: 80
+  restore_delay_ms: 1000
+enhancement:
+  automatic: false
