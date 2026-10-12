@@ -5,11 +5,13 @@ $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
 $out = Join-Path $PSScriptRoot 'release-build'
 $work = Join-Path $PSScriptRoot 'build\release'
+$Python = (Get-Command $Python).Source   # resolve before PATH is narrowed below (CI passes plain "python")
 $originalPath = $env:PATH
 try {
     $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
     & $Python -m PyInstaller --noconfirm --clean --distpath $out --workpath $work NuffSaid-Release.spec
 } finally { $env:PATH = $originalPath }
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed' }
-Copy-Item -LiteralPath "$PSScriptRoot\config-portable.yaml" -Destination "$out\NuffSaid\config.yaml" -Force
+$defaults = if (Test-Path -LiteralPath "$PSScriptRoot\config-portable.yaml") { "$PSScriptRoot\config-portable.yaml" } else { "$PSScriptRoot\config.yaml" }
+Copy-Item -LiteralPath $defaults -Destination "$out\NuffSaid\config.yaml" -Force
 Write-Host "Built $out\NuffSaid"
