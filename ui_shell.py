@@ -106,11 +106,17 @@ def gel_pixmap(diameter):
         pm = QPixmap.fromImage(image)
         pm.setDevicePixelRatio(pixels / side)
     except Exception:
+        # No usable OpenGL: draw the pre-rendered gel (assets/gel.png), or a red dot if even that is missing.
         pm = QPixmap(side * 2, side * 2); pm.fill(Qt.GlobalColor.transparent)
-        p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setBrush(QColor(237, 36, 56)); p.setPen(Qt.PenStyle.NoPen)
+        p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         r = diameter
-        p.drawEllipse(QRectF(side - r, side - r, 2 * r, 2 * r)); p.end()
+        art = QPixmap(str(Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'assets' / 'gel.png'))
+        if not art.isNull():
+            p.drawPixmap(QRectF(side - r, side - r, 2 * r, 2 * r), art, QRectF(art.rect()))
+        else:
+            p.setBrush(QColor(237, 36, 56)); p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QRectF(side - r, side - r, 2 * r, 2 * r))
+        p.end()
         pm.setDevicePixelRatio(2)
     _GEL[diameter] = pm
     return pm

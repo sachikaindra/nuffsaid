@@ -1,5 +1,6 @@
 """Approved gel shader, rendered offscreen for a transparent Windows overlay."""
 import ctypes
+import os
 from pathlib import Path
 import struct
 from PyQt6.QtCore import QSize
@@ -41,6 +42,8 @@ class GelRenderer:
         self.context.doneCurrent()
 
     def render(self, pixels, phase, deform, green, scale, glow):
+        if os.environ.get('NUFFSAID_NO_GL'):   # for testing the fallbacks
+            raise RuntimeError('OpenGL disabled by NUFFSAID_NO_GL')
         if not self.context.makeCurrent(self.surface):
             raise RuntimeError('Lost gel graphics context')
         try:
@@ -66,6 +69,10 @@ class GelRenderer:
             # Qt labels FBO readback as premultiplied; this shader emits straight
             # alpha, exactly like the approved WebGL canvas. Relabel, don't convert.
             image.reinterpretAsFormat(QImage.Format.Format_ARGB32)
+            # No real OpenGL (Windows Sandbox, some VMs/remote desktops) renders silently empty. The blob's
+            # centre is never transparent when scale > 0, so treat that as a failure and let the caller fall back.
+            if scale > .05 and image.pixelColor(pixels // 2, pixels // 2).alpha() == 0:
+                raise RuntimeError('Gel rendered empty (no usable OpenGL)')
             return image
         finally:
             if self.fbo:

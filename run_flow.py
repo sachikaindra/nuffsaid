@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT
-APP_VERSION = '1.0.2'
+APP_VERSION = '1.0.3'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
@@ -344,7 +344,9 @@ class LLMPolisher:
         if self.backend == 'openrouter':
             return KEY_PATH.exists()
         try:
-            return self._session.get(f"{self.cfg['base_url']}/api/tags", timeout=2).status_code == 200
+            response = self._session.get(f"{self.cfg['base_url']}/api/tags", timeout=2)
+            names = [m.get('name') for m in response.json().get('models', [])] if response.status_code == 200 else []
+            return self.cfg['model'] in names   # Ollama running AND the chosen model pulled
         except Exception:
             return False
 
@@ -1130,6 +1132,13 @@ class DictationController:
 
     def _toggle_cleanup(self):
         value = not CONFIG.get('enhancement', {}).get('automatic', False)
+        if value and not self._polisher.is_available():
+            self._notice('Auto cleanup needs an engine first: Ollama on this PC, or your own API key. Pick one in Settings.')
+            self._tray.refresh_cleanup_status()
+            self._open_window('settings')
+            self._window.refresh_cleanup()
+            self._window.pages['settings'].edit_engine()
+            return
         try:
             self._save_setting('enhancement', 'automatic', value)
             self._notice(f'Automatic light cleanup {"enabled" if value else "disabled"}. {shortcut_label("polish_trigger")} cleans up selected text or the last dictation.')

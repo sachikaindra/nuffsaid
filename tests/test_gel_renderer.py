@@ -17,8 +17,9 @@ class GelTests(unittest.TestCase):
             self.assertEqual(glow.pixelColor(0,128).alpha(),0)
             self.assertEqual(idle.pixelColor(220,128).alpha(),0)
             self.assertGreater(glow.pixelColor(220,128).alpha(),0)
-            self.assertGreater(glow.pixelColor(220,128).blue(),glow.pixelColor(220,128).green())
-            self.assertGreater(green.pixelColor(220,128).green(),green.pixelColor(220,128).blue())
+            # Red gel (2026-10-11): red-orange halo while listening, neutral clear-glass halo during cleanup.
+            self.assertGreater(glow.pixelColor(220,128).red(),glow.pixelColor(220,128).blue())
+            self.assertGreaterEqual(green.pixelColor(220,128).blue(),green.pixelColor(220,128).red())
             self.assertTrue(50 < idle.pixelColor(128,128).alpha() < 200)
             gone = renderer.render(256,1.4,.087,0,0,.5)
             self.assertEqual(gone.pixelColor(128,128).alpha(),0)
