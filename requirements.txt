@@ -1,19 +1,47 @@
-# Core dependencies
-PyQt6==6.6.1
-pynput==1.7.6
-pyaudio==0.2.13
-pyperclip==1.8.2
-pyautogui==0.9.54
-numpy==1.26.2
-requests==2.31.0
-
-# faster-whisper for local STT with CUDA
-faster-whisper==1.0.3
-ctranslate2==4.3.0
-
-# Optional: For direct llama.cpp integration (alternative to Ollama)
-# llama-cpp-python==0.2.72  # Uncomment if using local llama.cpp instead of Ollama
-
-# Windows-specific
-pywin32==306
-winshell==0.6
+altgraph==0.17.5
+anyio==4.15.1
+av==18.1.0
+certifi==2026.7.22
+charset-normalizer==3.5.1
+click==8.5.0
+colorama==0.4.6
+comtypes==1.4.17
+ctranslate2==4.8.2
+faster-whisper==1.2.1
+filelock==4.0.5
+flatbuffers==25.12.19
+fsspec==2026.9.0
+h11==0.16.0
+hf-xet==1.6.0
+httpcore==1.0.9
+httpx==0.28.1
+huggingface_hub==1.33.0
+idna==3.20
+numpy==2.5.3
+nvidia-cublas-cu12==12.9.2.10
+nvidia-cuda-nvrtc-cu12==12.9.86
+nvidia-cuda-runtime-cu12==12.9.79
+nvidia-cudnn-cu12==9.26.0.51
+onnxruntime==1.30.0
+packaging==26.3
+pefile==2024.8.26
+protobuf==7.36.2
+psutil==7.2.2
+PyAudio==0.2.14
+pycaw==20260927
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.7
+pynput==1.8.2
+pyperclip==1.11.0
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.2
+PyQt6_sip==13.12.0
+pywin32-ctypes==0.2.3
+PyYAML==6.0.3
+requests==2.34.2
+setuptools==84.0.0
+six==1.17.0
+tokenizers==0.23.2
+tqdm==4.70.1
+typing_extensions==4.16.0
+urllib3==2.8.0

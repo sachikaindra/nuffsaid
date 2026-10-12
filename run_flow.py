@@ -1140,6 +1140,15 @@ def main():
         finally:
             guard.close()
         return 0
+    # First run: download the speech model (and the optional NVIDIA boost) with a screen that says exactly what and why.
+    import first_run
+    model_name = CONFIG['stt'].get('model', 'turbo')
+    if model_name == 'turbo' and ('--setup' in sys.argv or not first_run.model_ready(APP_DIR, model_name)):
+        ui_shell.apply(app, ASSET_DIR.parent if (ASSET_DIR / 'fonts').exists() else APP_DIR)
+        if not first_run.run_setup(app):
+            logging.info('Setup closed before the speech model was ready')
+            guard.close()
+            return 0
     controller = None
     try:
         controller = DictationController()

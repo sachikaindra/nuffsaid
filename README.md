@@ -44,7 +44,7 @@ The speech model downloads on first run. For local cleanup, install Ollama and r
 
 ## Build
 
-`build-portable.ps1` builds the Windows app with PyInstaller.
+`build-release.ps1` builds the slim app (PyInstaller, no models or NVIDIA files inside), and `installer/NuffSaid.iss` (Inno Setup) wraps it into `NuffSaid-Setup.exe`. On first run the app downloads the speech model and, on NVIDIA PCs, the optional boost, and shows what, how big and why.
 
 ## Fonts
 

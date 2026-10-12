@@ -8,13 +8,15 @@ import sys
 
 _dll_handles = []
 _dll_paths = set()
+# Where first-run setup puts the speech model and the optional NVIDIA boost (first_run.py).
+HOME = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'NuffSaid'
 
 
 def configure_cuda_dlls():
     """Keep DLL-directory handles alive; closing them removes the search path."""
     if os.name != 'nt':
         return
-    candidates = [Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'cuda']
+    candidates = [Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'cuda', HOME / 'cuda']
     for package in ('nvidia.cublas', 'nvidia.cudnn', 'nvidia.cuda_runtime', 'nvidia.cuda_nvrtc'):
         try:
             module = importlib.import_module(package)
@@ -45,7 +47,7 @@ class AdaptiveSpeechEngine:
         self.fallback_reason = ''
         self.model_name = self.cfg.get('model', 'turbo')
         self.model_path = self.model_name
-        for candidate in (Path(app_dir) / self.model_name, Path(app_dir) / 'models' / self.model_name):
+        for candidate in (Path(app_dir) / self.model_name, Path(app_dir) / 'models' / self.model_name, HOME / 'models' / self.model_name):
             if candidate.is_dir():
                 self.model_path = str(candidate)
                 break
