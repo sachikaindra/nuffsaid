@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT
-APP_VERSION = '1.0.4'
+APP_VERSION = '1.0.5'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user

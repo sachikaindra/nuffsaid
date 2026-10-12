@@ -157,6 +157,17 @@ class LiquidOverlay(QWidget):
         self.timer.timeout.connect(self.tick)
         self.place()
         QApplication.instance().screenRemoved.connect(lambda _: self.place())
+        self.probe_graphics()
+
+    def probe_graphics(self):
+        """Decide once, before the window is ever shown, whether the real shader works on this PC. Creating the
+        OpenGL context inside the first paint of a translucent window left it blank until re-shown (Sandbox, 2026-10-13)."""
+        try:
+            self.renderer = GelRenderer()
+            self.renderer.render(192, 1.4, .087, 0., 1 / 1.08, 0.)   # raises when this PC renders empty
+        except Exception:
+            logging.info('Real-gel shader unavailable on this PC; using pre-rendered gel frames')
+            self.renderer, self.renderer_failed = None, True
 
     def save(self):
         if not self.path:
@@ -288,6 +299,8 @@ class LiquidOverlay(QWidget):
             except Exception:
                 logging.exception('Gel graphics unavailable; using the lightweight overlay')
                 self.renderer_failed = True
+                # Safety net: a failed GL paint can leave the translucent window blank; re-show it once.
+                QTimer.singleShot(0, lambda: (self.hide(), self.show()) if self.isVisible() else None)
         self.paint_fallback()
 
     def paint_fallback(self):
