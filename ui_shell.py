@@ -569,7 +569,7 @@ class SettingsPage(Page):
     def __init__(self, hooks):
         super().__init__('SETTINGS', hooks)
         grid = QWidget(self); g = QHBoxLayout(grid); g.setContentsMargins(0, 0, 0, 0); g.setSpacing(44)
-        grid.setGeometry(44, 150, 692, 380)
+        grid.setGeometry(44, 146, 692, 396)
         left, right = QVBoxLayout(), QVBoxLayout()
         for col in (left, right):
             col.setSpacing(0)
@@ -581,7 +581,9 @@ class SettingsPage(Page):
         self.startup = Toggle(starts_with_windows()); self.startup.toggled.connect(self.set_startup)
         left.addWidget(Row('Start with Windows', 'Ready before you are.', self.startup))
         self.open_launch = Toggle(hooks['open_on_launch']()); self.open_launch.toggled.connect(hooks['set_open_on_launch'])
-        left.addWidget(Row('Open dashboard on launch', 'Off = starts quietly in your tray.', self.open_launch)); left.addStretch(1)
+        left.addWidget(Row('Open dashboard on launch', 'Off = starts quietly in your tray.', self.open_launch))
+        self.updates = Toggle(hooks.get('updates_on', lambda: True)()); self.updates.toggled.connect(hooks.get('set_updates_on', lambda v: None))
+        left.addWidget(Row('Check for updates', 'Asks GitHub once a day. Sends nothing about you.', self.updates)); left.addStretch(1)
         right.addWidget(label('Cleanup', mono(10), G)); right.addSpacing(4)
         self.cleanup = Toggle(hooks['cleanup_on']()); self.cleanup.toggled.connect(lambda v: hooks['toggle_cleanup']())
         right.addWidget(Row('Auto cleanup', 'Fixes ums and punctuation.\nFirst one after launch is slower.\nOff = instant paste.', self.cleanup))
@@ -607,6 +609,7 @@ class SettingsPage(Page):
         self.cleanup.set_on(self.hooks['cleanup_on']())
         self.startup.set_on(starts_with_windows())
         self.open_launch.set_on(self.hooks['open_on_launch']())
+        self.updates.set_on(self.hooks.get('updates_on', lambda: True)())
         custom = self.hooks['get_prompt']().strip() != self.hooks['default_prompt']().strip()
         self.prompt_row.sub.setText('Yours. Reset to ours anytime.' if custom else 'Ours: removes ums and repeats. Make it yours.')
 

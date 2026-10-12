@@ -49,6 +49,7 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           Copy-Item LICENSE LICENSE.txt
+          Copy-Item PRIVACY.md PRIVACY.txt
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\NuffSaid.iss
           (Get-FileHash release-installer\NuffSaid-Setup.exe -Algorithm SHA256).Hash.ToLower() | Tee-Object release-installer\sha256.txt
 

@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT
-APP_VERSION = '1.0.1'
+APP_VERSION = '1.0.2'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
@@ -919,8 +919,31 @@ class DictationController:
         if self._tray and self._tray._tray:
             self._tray._tray.showMessage('NuffSaid', message, QSystemTrayIcon.MessageIcon.Information, 5000)
 
+    def _updates_on(self):
+        """Daily update check: Settings toggle, and the installer's 'Check for updates' option (HKCU registry)."""
+        if not CONFIG.get('ui', {}).get('check_updates', True):
+            return False
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\NuffSaid') as key:
+                return bool(winreg.QueryValueEx(key, 'CheckUpdates')[0])
+        except OSError:
+            return True
+
+    def _set_updates_on(self, value):
+        self._save_setting('ui', 'check_updates', bool(value))
+        try:
+            import winreg
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r'Software\NuffSaid') as key:
+                winreg.SetValueEx(key, 'CheckUpdates', 0, winreg.REG_DWORD, int(bool(value)))
+        except OSError:
+            pass
+
     def _check_for_update(self):
-        """Once a day: ask GitHub for the latest release tag. Sends nothing about the user."""
+        """Once a day: ask GitHub for the latest release tag. Sends nothing about the user. Can be turned off."""
+        if not self._updates_on():
+            logging.info('Update check is off')
+            return
         stamp = DATA_DIR / 'update-check.txt'
         try:
             if stamp.exists() and time.time() - stamp.stat().st_mtime < 20 * 3600:
@@ -1027,6 +1050,7 @@ class DictationController:
                 test_mic=self._test_audio, open_config=lambda: os.startfile(str(CONFIG_PATH)),
                 quit=self.shutdown, hud=lambda: self._tray._hud if self._tray else None, notice=self._notice,
                 open_on_launch=self._open_on_launch,
+                updates_on=self._updates_on, set_updates_on=self._set_updates_on,
                 get_prompt=cleanup_prompt, default_prompt=lambda: SYSTEM_PROMPT, set_prompt=set_cleanup_prompt,
                 engine_state=self._engine_state, ollama_models=self._ollama_models,
                 test_engine=self._test_engine, save_engine=self._save_engine,

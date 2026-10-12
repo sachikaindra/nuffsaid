@@ -53,6 +53,7 @@ exe = EXE(
     upx=True,
     console=False,
     icon='assets/nuffsaid.ico',
+    version='version_info.txt',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

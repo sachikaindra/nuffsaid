@@ -50,6 +50,19 @@ The speech model downloads on first run. For local cleanup, install Ollama and r
 
 The official build uses licensed fonts (Bueno, Aktiv Grotesk) that can't be shared here. Built from source, the app falls back to system fonts. Space Mono is free: put `SpaceMono-Regular.ttf` and `SpaceMono-Bold.ttf` in `assets/fonts/`.
 
+## Privacy
+
+No account, no analytics, no tracking. Speech becomes text on your PC and audio is never saved. Full details, including every network connection the app makes: [PRIVACY.md](PRIVACY.md).
+
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation. *(Application in progress: current releases are not signed yet.)*
+
+- Committers and reviewers: [Sachin (@sachikaindra)](https://github.com/sachikaindra)
+- Approvers: [Sachin (@sachikaindra)](https://github.com/sachikaindra)
+- Every release is built automatically from this repository by [GitHub Actions](.github/workflows/release.yml); each signing request is approved by hand.
+- Privacy policy: [PRIVACY.md](PRIVACY.md). This program does not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it, apart from the optional daily update check described there (it can be turned off).
+
 ## Licence
 
 [GPL-3.0](LICENSE). Use it, change it, share it. Keep it open.
