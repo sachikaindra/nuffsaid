@@ -111,7 +111,11 @@ def gel_pixmap(diameter):
         p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         r = diameter
         art = QPixmap(str(Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'assets' / 'gel.png'))
-        if not art.isNull():
+        from liquid_overlay import sprites_available, paint_gel_sprite
+        if sprites_available():
+            k = side  # sprite canvas = 1.72 x the blob, same framing as the shader render
+            paint_gel_sprite(p, QRectF(0, 0, 2 * k, 2 * k), 1.4, 0., 0.)
+        elif not art.isNull():
             p.drawPixmap(QRectF(side - r, side - r, 2 * r, 2 * r), art, QRectF(art.rect()))
         else:
             p.setBrush(QColor(237, 36, 56)); p.setPen(Qt.PenStyle.NoPen)
@@ -154,17 +158,40 @@ class LiveGel:
             cls._frame = {}
         if side in cls._frame:
             return cls._frame[side]
-        if cls._renderer is None:
-            from gel_renderer import GelRenderer
-            cls._renderer = GelRenderer()
         m = cls._motion
         pixels = max(64, min(512, side * 2))
+        if cls._renderer is False:   # no usable OpenGL on this PC: real-gel frames instead
+            return cls._sprite(side, m)
+        try:
+            if cls._renderer is None:
+                from gel_renderer import GelRenderer
+                cls._renderer = GelRenderer()
+            if not getattr(cls, '_probed', False):   # one probe: raises when this PC renders empty
+                cls._renderer.render(64, m.phase, m.deformation, 0., 1 / 1.08, 0.)
+                cls._probed = True
+        except Exception:
+            cls._renderer = False
+            return cls._sprite(side, m)
         from liquid_overlay import GLOW
         glow = m.activity * GLOW   # same halo as the dictation blob
         pm = QPixmap.fromImage(cls._renderer.render(pixels, m.phase, m.deformation, 0., 1 / 1.08, glow))
         pm.setDevicePixelRatio(pixels / side)
         cls._frame[side] = pm
         return pm
+
+
+def _sprite_frame(side, phase, activity):
+    from liquid_overlay import sprites_available, paint_gel_sprite
+    if not sprites_available():
+        raise RuntimeError('no gel frames')
+    pm = QPixmap(side * 2, side * 2); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    paint_gel_sprite(p, QRectF(0, 0, side * 2, side * 2), phase, activity, 0.)
+    p.end(); pm.setDevicePixelRatio(2)
+    return pm
+
+
+LiveGel._sprite = classmethod(lambda cls, side, m: cls._frame.setdefault(('s', side), _sprite_frame(side, m.phase, m.activity)))
 
 
 class Headline(QWidget):

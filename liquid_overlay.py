@@ -8,6 +8,41 @@ GLOW = .65 * 1.25   # speech halo strength, +25% (owner, 2026-10-12); shared wit
 BLOOM = ((0, 45), (.45, 28), (.75, 10), (1, 0))   # soft red bloom stops (alpha at full speech): 30% of the first version (owner, 2026-10-12)
 
 
+_SPRITES = {}
+SPRITE_FRAMES, SPRITE_COLS, SPRITE_SIZE, SPRITE_SPAN = 36, 6, 256, 12.0
+
+
+def _sheet(name):
+    """Pre-rendered frames of the real gel shader (tools/render_gel_frames.py), for PCs without usable OpenGL."""
+    if name not in _SPRITES:
+        import sys
+        from PyQt6.QtGui import QPixmap
+        base = Path(getattr(sys, '_MEIPASS', Path(__file__).parent)) / 'assets'
+        pm = QPixmap(str(base / f'gel-frames-{name}.png'))
+        _SPRITES[name] = None if pm.isNull() else pm
+    return _SPRITES[name]
+
+
+def sprites_available():
+    return _sheet('idle') is not None
+
+
+def paint_gel_sprite(painter, rect, phase, activity, green):
+    """Draw the real gel from pre-rendered frames. Phase plays ping-pong over the sheet so the loop never jumps;
+    the speaking frames fade in with speech activity, the clear-glass frames with cleanup."""
+    t = phase % (2 * SPRITE_SPAN)
+    t = t if t < SPRITE_SPAN else 2 * SPRITE_SPAN - t
+    i = min(SPRITE_FRAMES - 1, max(0, round(t / SPRITE_SPAN * (SPRITE_FRAMES - 1))))
+    src = QRectF((i % SPRITE_COLS) * SPRITE_SIZE, (i // SPRITE_COLS) * SPRITE_SIZE, SPRITE_SIZE, SPRITE_SIZE)
+    k = max(0., min(1., activity)) * (1 - green)   # cross-fade, never stack: glass layers would double up
+    layers = [('clean' if green > .5 else 'idle', 1. - k), ('speak', k)]
+    for name, alpha in layers:
+        sheet = _sheet(name)
+        if sheet is not None and alpha > .01:
+            painter.setOpacity(alpha); painter.drawPixmap(rect, sheet, src)
+    painter.setOpacity(1.)
+
+
 def paint_bloom(painter, cx, cy, d, strength, green=0., limit=None):
     """Soft red bloom behind the gel, everywhere the gel appears. Follows the speech glow (strength 0..1)."""
     if strength <= .01:
@@ -256,6 +291,18 @@ class LiquidOverlay(QWidget):
         self.paint_fallback()
 
     def paint_fallback(self):
+        if sprites_available():
+            # No usable OpenGL: play the pre-rendered frames of the real gel, scaled and moving with the voice.
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if self.editing:
+                p.setPen(QPen(QColor(160, 170, 195, 180), 1, Qt.PenStyle.DashLine))
+                p.drawRoundedRect(QRectF(12, 12, 200, 200), 12, 12)
+            paint_bloom(p, 112, 112, self.settings['size']*self.scale, self.motion.activity, self.green, limit=110)
+            extent = self.settings['size']*1.6*1.08*max(0., self.scale)
+            paint_gel_sprite(p, QRectF(112-extent/2, 112-extent/2, extent, extent), self.phase, self.motion.activity, self.green)
+            p.end()
+            return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         if self.editing:

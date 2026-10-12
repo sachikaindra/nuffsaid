@@ -6,7 +6,7 @@ from importlib import import_module
 
 # Release build (2026-10-12): no models and no NVIDIA libraries inside. first_run.py downloads them with a screen
 # that says what, how big and why. Agency fonts come from assets/fonts on the build machine (not in git).
-datas = [('assets/nuffsaid.png', 'assets'), ('assets/nuffsaid.ico', 'assets'), ('assets/gel.png', 'assets'), ('gel.frag', '.')]
+datas = [('assets/nuffsaid.png', 'assets'), ('assets/nuffsaid.ico', 'assets'), ('assets/gel.png', 'assets'), ('assets/gel-frames-idle.png', 'assets'), ('assets/gel-frames-speak.png', 'assets'), ('assets/gel-frames-clean.png', 'assets'), ('gel.frag', '.')]
 datas += [(str(f), 'assets/fonts') for f in Path('assets/fonts').glob('*.*tf')]
 binaries = []
 hiddenimports = ['pynput.keyboard._win32', 'pynput.mouse._win32']

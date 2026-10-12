@@ -1,6 +1,6 @@
 ; NuffSaid installer (Inno Setup 6). Build: ISCC.exe installer\NuffSaid.iss  ->  release-installer\NuffSaid-Setup.exe
 ; Per-user install, no admin prompt. The speech model and the optional NVIDIA boost download on first run (first_run.py).
-#define AppVersion "1.0.3"
+#define AppVersion "1.0.4"
 
 [Setup]
 AppId={{6E1C9C55-4E0B-4E4E-9B1E-5A2D3F7C1A01}
