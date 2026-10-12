@@ -126,6 +126,9 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT
+APP_VERSION = '1.0.1'
+RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
+INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
 PROMPT_PATH = DATA_DIR / 'cleanup-prompt.txt'   # the user's own cleanup prompt; ours is used when absent
 
@@ -697,6 +700,7 @@ class DictationController:
         success = self._tray.initialize(self._qt_app)
         if success:
             self._hotkeys.start()
+            threading.Thread(target=self._check_for_update, daemon=True, name='update-check').start()
             threading.Thread(target=self._polisher.preload, daemon=True,
                              name='cleanup-preload').start()
         return success
@@ -915,6 +919,29 @@ class DictationController:
         if self._tray and self._tray._tray:
             self._tray._tray.showMessage('NuffSaid', message, QSystemTrayIcon.MessageIcon.Information, 5000)
 
+    def _check_for_update(self):
+        """Once a day: ask GitHub for the latest release tag. Sends nothing about the user."""
+        stamp = DATA_DIR / 'update-check.txt'
+        try:
+            if stamp.exists() and time.time() - stamp.stat().st_mtime < 20 * 3600:
+                latest = stamp.read_text(encoding='utf-8').strip()
+            else:
+                latest = requests.get(RELEASES_API, timeout=8, headers={'Accept': 'application/vnd.github+json'}).json().get('tag_name', '')
+                stamp.parent.mkdir(parents=True, exist_ok=True)
+                stamp.write_text(latest, encoding='utf-8')
+            parse = lambda v: tuple(int(x) for x in v.lstrip('v').split('.') if x.isdigit())
+            if latest and parse(latest) > parse(APP_VERSION):
+                version = latest.lstrip('v')
+                self._update = version
+                self._desktop.call(lambda: self._announce_update(version))
+        except Exception:
+            logging.info('Update check skipped (offline or GitHub unavailable)')
+
+    def _announce_update(self, version):
+        self._notice(f'NuffSaid {version} is out. Open NuffSaid to get it.')
+        if self._window:
+            self._window.set_update(version, INSTALLER_URL)
+
     def _open_on_launch(self):
         return bool(CONFIG.get('ui', {}).get('open_on_launch', True))
 
@@ -992,6 +1019,7 @@ class DictationController:
     def _open_window(self, page):
         if self._window is None:
             self._window = ui_shell.MainWindow(dict(
+                version=APP_VERSION,
                 store=self._store, engine=lambda: self._stt.description, copy=self._desktop.set_text,
                 motion=lambda: self._recorder.get_motion() if self._recording else None,
                 cleanup_on=self._cleanup_on, toggle_cleanup=self._toggle_cleanup, cleanup_desc=self._cleanup_desc,
@@ -1003,6 +1031,8 @@ class DictationController:
                 engine_state=self._engine_state, ollama_models=self._ollama_models,
                 test_engine=self._test_engine, save_engine=self._save_engine,
                 set_open_on_launch=lambda v: self._save_setting('ui', 'open_on_launch', bool(v))))
+        if getattr(self, '_update', None):
+            self._window.set_update(self._update, INSTALLER_URL)
         self._window.open(page)
 
     def _show_status(self):

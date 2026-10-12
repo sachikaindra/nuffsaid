@@ -320,10 +320,12 @@ class HomePage(Page):
     def __init__(self, hooks):
         QWidget.__init__(self)
         self.hooks = hooks
-        label('Status · listening for Ctrl+Win', mono(10), G, self).move(44, 34)
+        self.status_label = label('Status · listening for Ctrl+Win', mono(10), G, self); self.status_label.move(44, 34)
         self.engine = label('', mono(10), G, self); self.engine.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.engine.setGeometry(380, 30, 356, 54)
         Headline('READY', 232, stretch=1.18, parent=self, live=hooks.get('motion', lambda: None)).move(38, 84)
+        self.update_btn = Pill('', self); self.update_btn.hide()
+        self.update_btn.setStyleSheet(f"QPushButton {{ color:{K}; background:{W}; border:1px solid {W}; border-radius:13px; padding:0 14px; }}")
         keys = QWidget(self); lay = QHBoxLayout(keys); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(12)
         lay.addWidget(keycap('Ctrl')); lay.addWidget(label('+', mono(13), G)); lay.addWidget(keycap('Win'))
         lay.addSpacing(14); lay.addWidget(label('Hold. Talk. Let go.', mono(13)))
@@ -590,7 +592,7 @@ class SettingsPage(Page):
         cfg = Pill('Open'); cfg.clicked.connect(hooks['open_config'])
         right.addWidget(Row('Settings file', 'For people who like YAML.', cfg)); right.addStretch(1)
         g.setSpacing(48); g.addLayout(left, 1); g.addLayout(right, 1)
-        label('NuffSaid 1.0 · free · nuffsaid.pages.dev', mono(10), G2, self).move(44, 548)
+        label(f"NuffSaid {hooks.get('version', '1.0')} · free · nuffsaid.pages.dev", mono(10), G2, self).move(44, 548)
         quit_ = Link('Quit NuffSaid', G, self); quit_.move(640, 544); quit_.clicked.connect(hooks['quit'])
 
     def set_startup(self, value):
@@ -817,7 +819,7 @@ class MainWindow(QWidget):
             b.clicked.connect(lambda _=False, k=key: self.open(k)); r.addWidget(b); self.buttons[key] = b
             page = cls(hooks); self.stack.addWidget(page); self.pages[key] = page
         r.addStretch(1)
-        r.addWidget(label('v1.0 · Windows\nClose me anytime.\nI live in your tray.', mono(9), G2))
+        r.addWidget(label(f"v{hooks.get('version', '1.0')} · Windows\nClose me anytime.\nI live in your tray.", mono(9), G2))
         r.itemAt(r.count() - 1).widget().setContentsMargins(22, 0, 0, 0)
         self.current = None
 
@@ -833,6 +835,21 @@ class MainWindow(QWidget):
         page.refresh()
         self.stack.setCurrentWidget(page)
         self.showNormal(); self.raise_(); self.activateWindow()
+
+    def set_update(self, version, url):
+        """Show the new version on Home, one click to download the installer (it updates in place)."""
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        home = self.pages['home']
+        home.update_btn.setText(f'NuffSaid {version} is out · Download')
+        home.update_btn.adjustSize(); home.update_btn.move(44, 30)
+        try:
+            home.update_btn.clicked.disconnect()
+        except TypeError:
+            pass
+        home.update_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+        home.update_btn.show(); home.update_btn.raise_()
+        home.status_label.hide()
 
     def close_to_tray(self):
         self.hide()
