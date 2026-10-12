@@ -27,6 +27,32 @@ from PyQt6.QtGui import QColor, QPainter, QPainterPath, QLinearGradient, QRadial
 from PyQt6.QtWidgets import QApplication, QWidget, QDialog, QVBoxLayout, QLabel, QSlider, QPushButton, QCheckBox
 
 
+BAR_GLOW = 28   # px of glow above the bar at full speech
+
+
+def paint_bar(p, width, bottom, phase, activity, polish=False):
+    """The bottom bar (4 px) plus a soft glow rising from it while you speak. Used by the overlay and the dashboard preview."""
+    color = QColor('#cfd4da' if polish else '#ff3a24')
+    r, g, b = color.red(), color.green(), color.blue()
+    center = .5 + .34*math.sin(phase*.45)
+    k = max(0., min(1., activity)) * (.4 if polish else 1.)
+    if k > .01:
+        rise = QLinearGradient(0, bottom, 0, bottom - BAR_GLOW)
+        rise.setColorAt(0, QColor(r, g, b, int(70*k))); rise.setColorAt(1, QColor(r, g, b, 0))
+        p.fillRect(QRectF(0, bottom - BAR_GLOW, width, BAR_GLOW), rise)
+        hot = QRadialGradient(width*center, bottom, width*.18)
+        hot.setColorAt(0, QColor(r, g, b, int(90*k))); hot.setColorAt(1, QColor(r, g, b, 0))
+        p.save(); p.translate(width*center, bottom); p.scale(1, BAR_GLOW/(width*.18)); p.translate(-width*center, -bottom)
+        p.fillRect(QRectF(0, bottom - width*.18, width, width*.18), hot); p.restore()
+    strip = QRectF(0, bottom - 4, width, 4)
+    p.fillRect(strip, QColor(r, g, b, 115))
+    gradient = QLinearGradient(0, 0, width, 0)
+    gradient.setColorAt(0, QColor(r, g, b, 65))
+    gradient.setColorAt(center, QColor(r, g, b, 235))
+    gradient.setColorAt(1, QColor(r, g, b, 65))
+    p.fillRect(strip, gradient)
+
+
 class BottomBar(QWidget):
     """The unobtrusive fallback when the user hides the blob."""
     def __init__(self):
@@ -40,22 +66,16 @@ class BottomBar(QWidget):
         self.app_mode = 'idle'
         self.energy = 0.
         self.phase = 0.
+        self.activity = 0.
 
     def place(self, screen):
         g = screen.availableGeometry()
-        self.setGeometry(g.left(), g.bottom()-3, g.width(), 4)
+        self.setGeometry(g.left(), g.bottom()-3-BAR_GLOW, g.width(), 4+BAR_GLOW)
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor('#cfd4da' if self.mode == 'polish' else '#ff3a24')
-        p.fillRect(self.rect(), QColor(color.red(), color.green(), color.blue(), 115))
-        gradient = QLinearGradient(0, 0, self.width(), 0)
-        center = .5 + .34*math.sin(self.phase*.45)
-        gradient.setColorAt(0, QColor(color.red(), color.green(), color.blue(), 65))
-        gradient.setColorAt(center, QColor(color.red(), color.green(), color.blue(), 235))
-        gradient.setColorAt(1, QColor(color.red(), color.green(), color.blue(), 65))
-        p.fillRect(self.rect(), gradient)
+        paint_bar(p, self.width(), self.height(), self.phase, self.activity, self.mode == 'polish')
         p.end()
 
 
@@ -205,7 +225,7 @@ class LiquidOverlay(QWidget):
         if not (self.transition and self.transition[0] == 'out'):
             self.green += ((1. if self.mode == 'polish' else 0.)-self.green)*(1-math.exp(-dt*5))
         if self.bar.isVisible():
-            self.bar.energy, self.bar.phase = self.energy, self.phase
+            self.bar.energy, self.bar.phase, self.bar.activity = self.energy, self.phase, self.motion.activity
             self.bar.update()
         else:
             self.update()

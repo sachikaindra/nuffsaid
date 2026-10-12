@@ -26,7 +26,7 @@
 - Your voice is turned into text **on your PC** (Whisper turbo via faster-whisper). No audio leaves it.
 - No account. No sign-up.
 - History and your dictionary stay on your PC. Clear them whenever.
-- Cleanup runs on your PC through [Ollama](https://ollama.com), or, if you pick it, through OpenRouter. Then the text (never audio) is sent to that provider.
+- Cleanup runs on your PC through [Ollama](https://ollama.com), or, if you pick it, through an online API with your own key: OpenRouter, OpenAI, Groq or any OpenAI-compatible provider. Then the text (never audio) is sent to that provider. Your key stays on your PC, encrypted for your Windows account.
 
 ## What you need
 

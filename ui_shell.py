@@ -458,8 +458,8 @@ class BlobPage(Page):
         self.size_label = label('', mono(10)); top.addWidget(self.size_label); s.addLayout(top); s.addSpacing(8)
         self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(24, 120); self.slider.valueChanged.connect(self.resize_blob)
         s.addWidget(self.slider); s.addSpacing(18)
-        self.drag = Link('Move it on screen', W); self.drag.clicked.connect(self.toggle_drag)
-        reset = Link('Reset', G); reset.clicked.connect(self.reset)
+        self.drag = Pill('Move'); self.drag.clicked.connect(self.toggle_drag)
+        reset = Pill('Reset'); reset.clicked.connect(self.reset)
         s.addWidget(Row('Position', 'Anywhere on screen.', self.drag))
         s.addWidget(Row('Back to default', 'Bottom centre.', reset))
         s.addStretch(1)
@@ -483,13 +483,29 @@ class BlobPage(Page):
     def paint_preview(self):
         size = self.slider.value()
         self.size_label.setText(f'{size} px')
-        self.preview.setPixmap(gel_pixmap(size))
+        hud = self.hud()
+        if hud and not hud.settings.get('enabled', True):
+            # Bottom bar: a mock screen with the bar glowing at its foot, as it looks while you talk.
+            from liquid_overlay import paint_bar
+            pm = QPixmap(796, 656); pm.setDevicePixelRatio(2); pm.fill(QColor('#070707'))
+            p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QColor('#1c1c1c'))
+            for i in range(7):
+                p.drawLine(28, 40 + i * 22, 28 + (300 if i % 3 else 200), 40 + i * 22)
+            paint_bar(p, 398, 300, 2.2, 1.0)
+            p.end()
+            self.preview.setPixmap(pm)
+            self.slider.setEnabled(False)
+        else:
+            self.preview.setPixmap(gel_pixmap(size))
+            self.slider.setEnabled(True)
 
     def set_style(self, liquid):
         hud = self.hud()
         if hud:
             hud.change('enabled', liquid)
         self.paint_style(liquid)
+        self.paint_preview()
 
     def resize_blob(self, value):
         hud = self.hud()
@@ -503,7 +519,7 @@ class BlobPage(Page):
             return
         editing = not getattr(hud, 'editing', False)
         hud.edit(editing)
-        self.drag.setText('Done' if editing else 'Move it on screen')
+        self.drag.setText('Done' if editing else 'Move')
 
     def reset(self):
         hud = self.hud()
@@ -513,7 +529,7 @@ class BlobPage(Page):
     def leave(self):
         hud = self.hud()
         if hud and getattr(hud, 'editing', False):
-            hud.edit(False); self.drag.setText('Move it on screen')
+            hud.edit(False); self.drag.setText('Move')
 
 
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
@@ -569,7 +585,7 @@ class SettingsPage(Page):
         right.addWidget(Row('Auto cleanup', 'Fixes ums and punctuation.\nFirst one after launch is slower.\nOff = instant paste.', self.cleanup))
         prompt = Pill('Edit'); prompt.clicked.connect(self.edit_prompt)
         self.prompt_row = Row('Cleanup prompt', '', prompt); right.addWidget(self.prompt_row)
-        engine = Pill('Change'); engine.clicked.connect(lambda: (hooks['choose_cleanup'](), self.refresh()))
+        engine = Pill('Change'); engine.clicked.connect(self.edit_engine)
         self.engine_row = Row('Cleanup engine', '', engine); right.addWidget(self.engine_row)
         cfg = Pill('Open'); cfg.clicked.connect(hooks['open_config'])
         right.addWidget(Row('Settings file', 'For people who like YAML.', cfg)); right.addStretch(1)
@@ -591,6 +607,11 @@ class SettingsPage(Page):
         self.open_launch.set_on(self.hooks['open_on_launch']())
         custom = self.hooks['get_prompt']().strip() != self.hooks['default_prompt']().strip()
         self.prompt_row.sub.setText('Yours. Reset to ours anytime.' if custom else 'Ours: removes ums and repeats. Make it yours.')
+
+    def edit_engine(self):
+        dialog = EngineDialog(self.hooks, self.window())
+        dialog.exec()
+        self.refresh()
 
     def edit_prompt(self):
         dialog = PromptDialog(self.hooks['get_prompt'](), self.hooks['default_prompt'](), self.window())
@@ -640,6 +661,133 @@ class PromptDialog(QDialog):
 
     def mouseReleaseEvent(self, event):
         self._drag = None
+
+
+class Sheet(QDialog):
+    """Frameless black sheet in the window style; drag it by the top."""
+    def __init__(self, w, h, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedSize(w, h)
+        self._drag = None
+
+    def paintEvent(self, event):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath(); path.addRoundedRect(QRectF(.5, .5, self.width() - 1, self.height() - 1), 10, 10)
+        p.fillPath(path, QColor(K)); p.setPen(QPen(QColor('#262626'), 1)); p.drawPath(path); p.end()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and event.position().y() < 100:
+            self._drag = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, event):
+        if self._drag is not None:
+            self.move(event.globalPosition().toPoint() - self._drag)
+
+    def mouseReleaseEvent(self, event):
+        self._drag = None
+
+
+PROVIDERS = [('OpenRouter', 'https://openrouter.ai/api/v1', 'nvidia/nemotron-3.5-lightning:free'),
+             ('OpenAI', 'https://api.openai.com/v1', ''),
+             ('Groq', 'https://api.groq.com/openai/v1', ''),
+             ('Other (OpenAI-compatible)', '', '')]
+
+
+class EngineDialog(Sheet):
+    """Choose where cleanup runs: on this PC (Ollama) or an online API with your own key."""
+    def __init__(self, hooks, parent=None):
+        super().__init__(640, 560, parent)
+        from PyQt6.QtWidgets import QComboBox
+        self.hooks, st = hooks, hooks['engine_state']()
+        Headline('CLEANUP ENGINE', 60, parent=self).move(36, 30)
+        seg = QWidget(self); sl = QHBoxLayout(seg); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
+        seg.setGeometry(36, 110, 568, 40)
+        self.local_btn, self.api_btn = QPushButton('On this PC'), QPushButton('Online API')
+        for b, v in ((self.local_btn, 'ollama'), (self.api_btn, 'api')):
+            b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, v=v: self.set_mode(v)); sl.addWidget(b)
+
+        self.local = QWidget(self); self.local.setGeometry(36, 170, 568, 260)
+        ll = QVBoxLayout(self.local); ll.setContentsMargins(0, 0, 0, 0); ll.setSpacing(8)
+        ll.addWidget(label('Ollama model', mono(10), G))
+        self.models = QComboBox(); self.models.setFont(body(14)); ll.addWidget(self.models)
+        try:
+            names = hooks['ollama_models']() or []
+        except Exception:
+            names = []
+        self.models.addItems(names or [st['ollama_model']])
+        self.models.setCurrentText(st['ollama_model'])
+        ll.addSpacing(10)
+        ll.addWidget(label('Free and private: runs on your graphics card, nothing leaves your PC.\n'
+                           'Needs Ollama (ollama.com) with a model pulled.' + ('' if names else '\nOllama is not running right now.'),
+                           body(12), G, wrap=True))
+        ll.addStretch(1)
+
+        self.api = QWidget(self); self.api.setGeometry(36, 170, 568, 260)
+        al = QGridLayout(self.api); al.setContentsMargins(0, 0, 0, 0); al.setHorizontalSpacing(16); al.setVerticalSpacing(6)
+        al.addWidget(label('Provider', mono(10), G), 0, 0); al.addWidget(label('Model', mono(10), G), 0, 1)
+        self.provider = QComboBox(); self.provider.setFont(body(14)); self.provider.addItems([p[0] for p in PROVIDERS])
+        self.model = QLineEdit(st['model']); self.model.setPlaceholderText('model id from your provider')
+        al.addWidget(self.provider, 1, 0); al.addWidget(self.model, 1, 1)
+        al.addWidget(label('API address', mono(10), G), 2, 0, 1, 2)
+        self.base = QLineEdit(st['base_url']); al.addWidget(self.base, 3, 0, 1, 2)
+        al.addWidget(label('API key', mono(10), G), 4, 0, 1, 2)
+        self.key = QLineEdit(); self.key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.key.setPlaceholderText('Saved on this PC, encrypted. Paste to replace.' if st['has_key'] else 'Paste your key')
+        al.addWidget(self.key, 5, 0, 1, 2)
+        al.addWidget(label('Your dictated text (never audio) goes to this provider. The key stays on this PC, encrypted for your Windows account.',
+                           body(12), G, wrap=True), 6, 0, 1, 2)
+        al.setRowStretch(7, 1)
+        match = next((i for i, p in enumerate(PROVIDERS) if p[1] and p[1] in st['base_url']), len(PROVIDERS) - 1)
+        self.provider.setCurrentIndex(match)
+        self.provider.currentIndexChanged.connect(self.pick_provider)
+
+        self.status = label('', body(12), G, self, wrap=True); self.status.setGeometry(36, 436, 568, 40)
+        test = Pill('Test', self); test.move(36, 498); test.clicked.connect(self.test)
+        cancel = Pill('Cancel', self); cancel.move(448, 498); cancel.clicked.connect(self.reject)
+        save = Pill('Save', self); save.move(530, 498); save.clicked.connect(self.save)
+        save.setStyleSheet(f"QPushButton {{ color:{K}; background:{W}; border:1px solid {W}; border-radius:13px; padding:0 16px; }} QPushButton:hover {{ background:#dcdcdc; }}")
+        self.set_mode(st['backend'])
+
+    def pick_provider(self, index):
+        name, base, model = PROVIDERS[index]
+        if base:
+            self.base.setText(base)
+        if model or not self.model.text():
+            self.model.setText(model)
+
+    def set_mode(self, mode):
+        self.mode = mode
+        self.local.setVisible(mode == 'ollama'); self.api.setVisible(mode == 'api')
+        on = f'background:{W}; color:{K}; border:1px solid {W};'
+        off = f'background:transparent; color:{G}; border:1px solid {G2};'
+        self.local_btn.setStyleSheet(f'QPushButton {{ {on if mode == "ollama" else off} border-top-left-radius:6px; border-bottom-left-radius:6px; border-top-right-radius:0; border-bottom-right-radius:0; padding:10px; }}')
+        self.api_btn.setStyleSheet(f'QPushButton {{ {on if mode == "api" else off} border-top-right-radius:6px; border-bottom-right-radius:6px; border-top-left-radius:0; border-bottom-left-radius:0; padding:10px; }}')
+
+    def choice(self):
+        if self.mode == 'ollama':
+            return {'backend': 'ollama', 'ollama_model': self.models.currentText()}
+        return {'backend': 'api', 'base_url': self.base.text().strip(), 'model': self.model.text().strip(), 'key': self.key.text().strip()}
+
+    def test(self):
+        c = self.choice()
+        if c['backend'] == 'api' and (not c['base_url'] or not c['model']):
+            self.status.setText('Fill in the API address and model.'); return
+        self.status.setText('Testing with a sample sentence…'); QApplication.processEvents()
+        ok, msg = self.hooks['test_engine'](c)
+        self.status.setStyleSheet(f'color:{W if ok else G}; background:transparent;')
+        self.status.setText(('Works. ' if ok else 'Did not work: ') + msg)
+
+    def save(self):
+        c = self.choice()
+        if c['backend'] == 'api' and (not c['base_url'] or not c['model']):
+            self.status.setText('Fill in the API address and model.'); return
+        error = self.hooks['save_engine'](c)
+        if error:
+            self.status.setText(error)
+        else:
+            self.accept()
 
 
 # --- Window ------------------------------------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Free-only text cleanup and Windows user-bound secret storage."""
+"""Online text cleanup through any OpenAI-compatible API (OpenRouter by default) and Windows user-bound secret storage."""
 import ctypes
 from ctypes import wintypes
 import time
@@ -46,21 +46,22 @@ def load_key(path):
     return protect(path.read_bytes(), decrypt=True).decode('utf-8')
 
 
-def cleanup(session, key, text, instructions, timeout=60):
+def cleanup(session, key, text, instructions, timeout=60, base=BASE, model=MODEL):
     # Network inactivity protection only; no short deadline discards slow results.
     payload = {
-        'model': MODEL,
+        'model': model,
         'messages': [{'role': 'system', 'content': instructions},
                      {'role': 'user', 'content': '<dictated_text>\n' + text + '\n</dictated_text>'}],
-        'provider': {'max_price': {'prompt': 0, 'completion': 0, 'request': 0},
-                     'allow_fallbacks': False},
-        'reasoning': {'enabled': False},
         'max_tokens': min(4096, max(256, len(text))),
         'stream': False,
     }
+    if 'openrouter.ai' in base:
+        payload['reasoning'] = {'enabled': False}
+        if model.endswith(':free'):   # free models stay free: never fall back to a paid provider
+            payload['provider'] = {'max_price': {'prompt': 0, 'completion': 0, 'request': 0}, 'allow_fallbacks': False}
     started = time.perf_counter()
     try:
-        response = session.post(BASE + '/chat/completions', json=payload,
+        response = session.post(base.rstrip('/') + '/chat/completions', json=payload,
                                 headers={'Authorization': 'Bearer ' + key},
                                 timeout=(2, timeout), allow_redirects=False)
     except requests.RequestException:

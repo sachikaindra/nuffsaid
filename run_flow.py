@@ -126,6 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT
+KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
 PROMPT_PATH = DATA_DIR / 'cleanup-prompt.txt'   # the user's own cleanup prompt; ours is used when absent
 
 
@@ -322,7 +323,7 @@ class LLMPolisher:
 
     def preload(self):
         """Load on a background thread without recording or generating user text."""
-        if self.backend == 'openrouter':
+        if self.backend in ('openrouter', 'api'):
             return
         started = time.perf_counter()
         try:
@@ -338,7 +339,7 @@ class LLMPolisher:
 
     def is_available(self) -> bool:
         if self.backend == 'openrouter':
-            return (APP_DIR / 'dist' / 'NuffSaid' / 'data' / 'openrouter.key.dpapi').exists()
+            return KEY_PATH.exists()
         try:
             return self._session.get(f"{self.cfg['base_url']}/api/tags", timeout=2).status_code == 200
         except Exception:
@@ -348,15 +349,16 @@ class LLMPolisher:
         from cleanup_text import short_fragment, validate_cleanup
         if short_fragment(text):
             return PolishResult(text, text, 0, 'unchanged-short-fragment')
-        if self.backend == 'openrouter':
-            from openrouter_cleanup import cleanup, load_key, MODEL
+        if self.backend in ('openrouter', 'api'):
+            from openrouter_cleanup import cleanup, load_key, MODEL, BASE
+            api = CONFIG['llm'].get('api', {})
+            base, model = api.get('base_url', BASE), api.get('model', MODEL)
             if not text or not text.strip():
-                return PolishResult(text, text, 0, MODEL)
-            key = load_key(APP_DIR / 'dist' / 'NuffSaid' / 'data' / 'openrouter.key.dpapi')
-            polished, elapsed = cleanup(requests.Session(), key, text, cleanup_prompt())
-            logging.info('TIMING OpenRouter cleanup: %.3fs', elapsed)
+                return PolishResult(text, text, 0, model)
+            polished, elapsed = cleanup(requests.Session(), load_key(KEY_PATH), text, cleanup_prompt(), base=base, model=model)
+            logging.info('TIMING online cleanup (%s): %.3fs', model, elapsed)
             return PolishResult(original_text=text, polished_text=polished,
-                                processing_time=elapsed, model_used=MODEL)
+                                processing_time=elapsed, model_used=model)
         if not text or not text.strip():
             return PolishResult(original_text=text, polished_text=text, processing_time=0, model_used=self.cfg["model"])
 
@@ -920,9 +922,72 @@ class DictationController:
         return bool(CONFIG.get('enhancement', {}).get('automatic', False))
 
     def _cleanup_desc(self):
-        if CONFIG['llm'].get('backend', 'ollama') == 'openrouter':
-            return 'OpenRouter · free NVIDIA model'
+        if CONFIG['llm'].get('backend', 'ollama') in ('openrouter', 'api'):
+            from openrouter_cleanup import BASE, MODEL
+            from urllib.parse import urlparse
+            api = CONFIG['llm'].get('api', {})
+            host = urlparse(api.get('base_url', BASE)).hostname or 'API'
+            return f"Online · {host.replace('api.', '').replace('www.', '')} · {api.get('model', MODEL)}"
         return 'On this PC · Ollama ' + CONFIG['llm']['ollama']['model']
+
+    def _engine_state(self):
+        from openrouter_cleanup import BASE, MODEL
+        api = CONFIG['llm'].get('api', {})
+        return dict(backend='api' if CONFIG['llm'].get('backend') in ('openrouter', 'api') else 'ollama',
+                    ollama_model=CONFIG['llm']['ollama']['model'], base_url=api.get('base_url', BASE),
+                    model=api.get('model', MODEL), has_key=KEY_PATH.exists())
+
+    def _ollama_models(self):
+        cfg = CONFIG['llm']['ollama']
+        response = requests.get(cfg['base_url'] + '/api/tags', timeout=2)
+        response.raise_for_status()
+        return [m['name'] for m in response.json().get('models', [])]
+
+    def _test_engine(self, choice):
+        """Clean one sample sentence with the chosen engine. Returns (ok, message)."""
+        sample = 'Um so I I will send the the file tomorrow and then we can, you know, review it together.'
+        try:
+            started = time.perf_counter()
+            if choice['backend'] == 'ollama':
+                cfg = CONFIG['llm']['ollama']
+                r = requests.post(cfg['base_url'] + '/api/generate', json={
+                    'model': choice['ollama_model'], 'prompt': f'<dictated_text>\n{sample}\n</dictated_text>',
+                    'system': cleanup_prompt(), 'stream': False, 'options': cfg['options']}, timeout=cfg['timeout'])
+                r.raise_for_status()
+                out = r.json().get('response', '').strip()
+            else:
+                from openrouter_cleanup import cleanup, load_key
+                key = choice.get('key') or (load_key(KEY_PATH) if KEY_PATH.exists() else '')
+                if not key:
+                    return False, 'Paste your API key first.'
+                out, _ = cleanup(requests.Session(), key, sample, cleanup_prompt(), timeout=30,
+                                 base=choice['base_url'], model=choice['model'])
+            return True, f'{time.perf_counter() - started:.1f}s  ·  {out}'
+        except Exception as exc:
+            return False, str(exc)[:160] or type(exc).__name__
+
+    def _save_engine(self, choice):
+        if self._busy or self._recording:
+            return 'Finish the current dictation first.'
+        try:
+            if choice['backend'] == 'ollama':
+                self._save_setting('llm', 'ollama', dict(CONFIG['llm']['ollama'], model=choice['ollama_model']))
+                self._save_setting('llm', 'backend', 'ollama')
+            else:
+                if choice.get('key'):
+                    from openrouter_cleanup import protect
+                    KEY_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    KEY_PATH.write_bytes(protect(choice['key'].encode('utf-8')))
+                if not KEY_PATH.exists():
+                    return 'Paste your API key first.'
+                self._save_setting('llm', 'api', {'base_url': choice['base_url'].strip(), 'model': choice['model'].strip()})
+                self._save_setting('llm', 'backend', 'api')
+            self._polisher = LLMPolisher()
+            threading.Thread(target=self._polisher.preload, daemon=True, name='cleanup-preload').start()
+            self._tray.refresh_cleanup_status()
+            return ''
+        except Exception as exc:
+            return f'Could not save: {exc}'
 
     def _open_window(self, page):
         if self._window is None:
@@ -935,6 +1000,8 @@ class DictationController:
                 quit=self.shutdown, hud=lambda: self._tray._hud if self._tray else None, notice=self._notice,
                 open_on_launch=self._open_on_launch,
                 get_prompt=cleanup_prompt, default_prompt=lambda: SYSTEM_PROMPT, set_prompt=set_cleanup_prompt,
+                engine_state=self._engine_state, ollama_models=self._ollama_models,
+                test_engine=self._test_engine, save_engine=self._save_engine,
                 set_open_on_launch=lambda v: self._save_setting('ui', 'open_on_launch', bool(v))))
         self._window.open(page)
 
@@ -978,7 +1045,7 @@ class DictationController:
         try:
             if backend == 'openrouter':
                 from openrouter_cleanup import load_key
-                load_key(APP_DIR / 'dist' / 'NuffSaid' / 'data' / 'openrouter.key.dpapi')
+                load_key(KEY_PATH)
             else:
                 cfg = CONFIG['llm']['ollama']
                 response = requests.get(cfg['base_url'] + '/api/tags', timeout=2)
