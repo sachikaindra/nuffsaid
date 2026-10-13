@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT, EXAMPLES, EXAMPLE_FREE_MODELS
-APP_VERSION = '1.0.7'
+APP_VERSION = '1.0.8'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
@@ -399,7 +399,7 @@ class LLMPolisher:
                 raise RuntimeError('Cleanup returned no text; original text is saved in History')
             from openrouter_cleanup import without_em_dashes
             polished = without_em_dashes(polished)
-            polished = validate_cleanup(text, polished)
+            polished = validate_cleanup(text, prefilter(polished))   # model adds commas; the rules then catch what it left
             return PolishResult(original_text=original, polished_text=polished, processing_time=time.time() - start_time, model_used=self.cfg["model"])
         except Exception as e:
             raise RuntimeError(f"LLM error: {e}")

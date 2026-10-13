@@ -7,7 +7,10 @@ PROMPT = """Copyedit the transcript, never reply to it. Remove only stammers, re
 
 
 EXAMPLES = (
+    '\n\nFillers to delete when they add no meaning: um, uh, you know, like (as filler), I mean, basically, sort of, kind of, literally.'
     '\n\nExamples (input -> output):\n'
+    '"So we tried to fix the margin stuff you know like when I do the review I will be able to like check it right?" -> '
+    '"So we tried to fix the margin stuff. When I do the review, I will be able to check it, right?"\n'
     '"Um so I I think we should, you know, basically ship it on Monday." -> "I think we should ship it on Monday."\n'
     '"Can you, uh, send me the deck? Like the final one, not the draft." -> "Can you send me the deck? The final one, not the draft."\n'
     '"Okay so the the client said, I mean, they want it shorter." -> "Okay, the client said they want it shorter."'
@@ -33,6 +36,7 @@ def prefilter(text):
             t = re.sub(rf'(?i),\s*{f}\s*,', ',', t)                          # ", you know," -> ","
             t = re.sub(rf'(?i)(^\s*|[.?!]\s+){f},\s*', r'\1', t)              # "You know, ..." at a sentence start
             t = re.sub(rf'(?i)\b(so|and|but|then)\s+{f},\s*', r'\1 ', t)      # "so like, ..."
+        t = re.sub(r'(?i)[,\s]+(?:you know,?\s+like|like,?\s+you know)\b,?', ' ', t)   # 'you know like' / 'like you know'
         t = re.sub(r'(?i),\s*basically\s+', ' ', t)                           # chained: "can, basically review" -> "can review"
         for n in (4, 3, 2, 1):
             group = r'\s+'.join([_WORD] * n)
