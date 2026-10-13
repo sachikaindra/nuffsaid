@@ -126,7 +126,7 @@ DEFAULT_CONFIG = {
 }
 
 from cleanup_text import PROMPT as SYSTEM_PROMPT, EXAMPLES, EXAMPLE_FREE_MODELS
-APP_VERSION = '1.0.6'
+APP_VERSION = '1.0.7'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
@@ -355,9 +355,10 @@ class LLMPolisher:
             return False
 
     def polish(self, text: str) -> PolishResult:
-        from cleanup_text import short_fragment, validate_cleanup
+        from cleanup_text import short_fragment, validate_cleanup, prefilter
         if short_fragment(text):
             return PolishResult(text, text, 0, 'unchanged-short-fragment')
+        original, text = text, prefilter(text)   # fillers out first; the model only polishes
         if self.backend in ('openrouter', 'api'):
             from openrouter_cleanup import cleanup, load_key, MODEL, BASE
             api = CONFIG['llm'].get('api', {})
@@ -366,7 +367,7 @@ class LLMPolisher:
                 return PolishResult(text, text, 0, model)
             polished, elapsed = cleanup(requests.Session(), load_key(KEY_PATH), text, cleanup_prompt(), base=base, model=model)
             logging.info('TIMING online cleanup (%s): %.3fs', model, elapsed)
-            return PolishResult(original_text=text, polished_text=polished,
+            return PolishResult(original_text=original, polished_text=polished,
                                 processing_time=elapsed, model_used=model)
         if not text or not text.strip():
             return PolishResult(original_text=text, polished_text=text, processing_time=0, model_used=self.cfg["model"])
@@ -399,7 +400,7 @@ class LLMPolisher:
             from openrouter_cleanup import without_em_dashes
             polished = without_em_dashes(polished)
             polished = validate_cleanup(text, polished)
-            return PolishResult(original_text=text, polished_text=polished, processing_time=time.time() - start_time, model_used=self.cfg["model"])
+            return PolishResult(original_text=original, polished_text=polished, processing_time=time.time() - start_time, model_used=self.cfg["model"])
         except Exception as e:
             raise RuntimeError(f"LLM error: {e}")
 
@@ -897,7 +898,10 @@ class DictationController:
                 self._store.update(entry, output)
             except Exception as exc:
                 logging.warning('Cleanup skipped: %s', exc)
-                self._desktop.notice_requested.emit(f'Cleanup unavailable; inserting original dictation. {exc}')
+                from cleanup_text import prefilter
+                output = self._store.apply(prefilter(output))   # the rule-based filler pass still applies
+                self._store.update(entry, output)
+                self._desktop.notice_requested.emit(f'Cleanup engine unavailable, so only fillers were removed. {exc}')
         self._insert(output)
 
     def _process_polish(self):

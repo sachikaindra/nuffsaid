@@ -15,6 +15,36 @@ EXAMPLES = (
 EXAMPLE_FREE_MODELS = {'llama3:instruct'}   # large models do better without examples (benchmark 2026-10-13)
 
 
+_WORD = r"[\w']+"
+_FENCED = ('you know', 'like', 'i mean', 'basically', 'sort of', 'kind of', 'actually', 'literally')
+
+
+def prefilter(text):
+    """Rule-based filler removal before the model (owner test 2026-10-13: models kept fillers in long rambles).
+    Only removes what is a filler by construction, so it never needs a safety check:
+    noises (um, uh, erm, hmm); comma-fenced fillers (', you know,' / ', like,'), which is how Whisper writes them;
+    word-for-word repeats ('we should, we should', 'it's, it's'). 'I know you like it' and 'Do you know' are untouched."""
+    t = ' ' + text.strip() + ' '
+    before = None
+    while before != t:
+        before = t
+        t = re.sub(r'(?i)[,\s]*\b(?:um+|uh+|erm+|hmm+)\b[,.]?(?=\s)', ' ', t)
+        for f in _FENCED:
+            t = re.sub(rf'(?i),\s*{f}\s*,', ',', t)                          # ", you know," -> ","
+            t = re.sub(rf'(?i)(^\s*|[.?!]\s+){f},\s*', r'\1', t)              # "You know, ..." at a sentence start
+            t = re.sub(rf'(?i)\b(so|and|but|then)\s+{f},\s*', r'\1 ', t)      # "so like, ..."
+        t = re.sub(r'(?i),\s*basically\s+', ' ', t)                           # chained: "can, basically review" -> "can review"
+        for n in (4, 3, 2, 1):
+            group = r'\s+'.join([_WORD] * n)
+            t = re.sub(rf'(?i)\b({group}),?\s+\1\b', r'\1', t)
+        t = re.sub(r'(?i)\b(the|a|an)\s*,\s+', r'\1 ', t)   # "the, videos" -> "the videos" (articles never end a phrase)
+        t = re.sub(r'\s+,', ',', t)
+        t = re.sub(r',\s*,', ',', t)
+        t = re.sub(r'\s{2,}', ' ', t)
+    t = re.sub(r'^[,\s]+', '', t.strip())
+    return t[:1].upper() + t[1:] if t else t
+
+
 def tokens(text):
     text = text.lower().replace('’', "'")
     text = re.sub(r"\bcan't\b", 'can not', text)
@@ -52,7 +82,10 @@ def validate_cleanup(source, output):
     a = [w for w in before if w in protected]
     b = [w for w in after if w in protected]
     reason = None
-    if a != b:
+    negation = {'not', 'no', 'never', 'neither', 'nor', 'nobody', 'nothing', 'without', 'cannot'}
+    # Negation must match exactly. Pronouns: the same ones must appear (we -> you is caught), but merging a
+    # restart ("when I'm, when I will" -> "when I will") may drop a repeat (owner test 2026-10-13).
+    if [w for w in a if w in negation] != [w for w in b if w in negation] or set(a) - negation != set(b) - negation:
         reason = 'pronouns or negation changed'
     elif len(re.findall(r'\b(?:okay|ok)\b', source, re.I)) != len(re.findall(r'\b(?:okay|ok)\b', output, re.I)):
         reason = 'okay changed'
