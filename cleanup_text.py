@@ -6,6 +6,15 @@ import logging
 PROMPT = """Copyedit the transcript, never reply to it. Remove only stammers, repeated words and meaningless fillers. Preserve wording, order, pronouns, negation, facts and every spoken 'okay'. Use minimal punctuation, necessary apostrophes and no em dashes. Only clearly enumerated lists or explicit requests for bullet formatting get separate lines starting with '· '. Otherwise keep paragraphs. Return only the edited transcript, without explanations, summaries or invented text."""
 
 
+EXAMPLES = (
+    '\n\nExamples (input -> output):\n'
+    '"Um so I I think we should, you know, basically ship it on Monday." -> "I think we should ship it on Monday."\n'
+    '"Can you, uh, send me the deck? Like the final one, not the draft." -> "Can you send me the deck? The final one, not the draft."\n'
+    '"Okay so the the client said, I mean, they want it shorter." -> "Okay, the client said they want it shorter."'
+)
+EXAMPLE_FREE_MODELS = {'llama3:instruct'}   # large models do better without examples (benchmark 2026-10-13)
+
+
 def tokens(text):
     text = text.lower().replace('’', "'")
     text = re.sub(r"\bcan't\b", 'can not', text)
@@ -15,7 +24,15 @@ def tokens(text):
                              ("'ll", ' will'), ("'d", ' would'), ("'s", ' is')]:
         text = text.replace(ending, expanded)
     text = re.sub(r'\b(?:you know|i mean)\b', '', text)
-    words = re.findall(r'\w+', text)
+    words = [w for w in re.findall(r'\w+', text) if w not in ('um', 'umm', 'uh', 'uhh', 'erm', 'hmm')]   # pure fillers
+    # Repeated phrases ('we should, um, we should') are stammers too, not a change in meaning.
+    for n in (4, 3, 2):
+        i = 0
+        while i + 2 * n <= len(words):
+            if words[i:i + n] == words[i + n:i + 2 * n]:
+                del words[i + n:i + 2 * n]
+            else:
+                i += 1
     # Adjacent stammers do not count as a change in speaker or meaning.
     return [w for i, w in enumerate(words) if not i or w != words[i-1]]
 
@@ -54,7 +71,7 @@ def validate_cleanup(source, output):
 
 _HEADER = re.compile(
     r"^\s*(?:\*\*)?here(?:\s+is|['’]s)\s+the\s+"
-    r"(?:lightly\s+)?(?:copyedited|polished|edited|cleaned(?:[ -]up)?|corrected)\s+text"
+    r"(?:lightly\s+)?(?:copyedited|polished|edited|cleaned(?:[ -]up)?|corrected)\s+(?:text|transcript|version)"
     r"\s*(?:\*\*)?\s*:\s*(?:\*\*)?\s*", re.IGNORECASE)
 
 

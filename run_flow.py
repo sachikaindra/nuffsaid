@@ -90,8 +90,8 @@ DEFAULT_CONFIG = {
     "llm": {
         "backend": "ollama",
         "ollama": {
-            "base_url": "http://localhost:11434",
-            "model": "llama3:instruct",
+            "base_url": "http://127.0.0.1:11434",
+            "model": "qwen2.5:3b",
             "timeout": 30,
             "options": {
                 "temperature": 0.1,
@@ -125,8 +125,8 @@ DEFAULT_CONFIG = {
     }
 }
 
-from cleanup_text import PROMPT as SYSTEM_PROMPT
-APP_VERSION = '1.0.5'
+from cleanup_text import PROMPT as SYSTEM_PROMPT, EXAMPLES, EXAMPLE_FREE_MODELS
+APP_VERSION = '1.0.6'
 RELEASES_API = 'https://api.github.com/repos/sachikaindra/nuffsaid/releases/latest'
 INSTALLER_URL = 'https://github.com/sachikaindra/nuffsaid/releases/latest/download/NuffSaid-Setup.exe'
 KEY_PATH = DATA_DIR / 'openrouter.key.dpapi'      # online cleanup API key, encrypted for this Windows user
@@ -164,6 +164,10 @@ def load_config() -> dict:
                         config[key] = value
         except Exception as e:
             print(f"Config load error: {e}")
+    # 'localhost' adds ~2 s to every Ollama request on Windows (IPv6 tried first; Ollama listens on IPv4).
+    ollama = config.get('llm', {}).get('ollama', {})
+    if isinstance(ollama.get('base_url'), str):
+        ollama['base_url'] = ollama['base_url'].replace('://localhost', '://127.0.0.1')
     return config
 
 CONFIG = load_config()
@@ -372,7 +376,7 @@ class LLMPolisher:
         payload = {
             "model": self.cfg["model"],
             "prompt": prompt,
-            "system": cleanup_prompt(),
+            "system": cleanup_prompt() + (EXAMPLES if cleanup_prompt() == SYSTEM_PROMPT and self.cfg["model"] not in EXAMPLE_FREE_MODELS else ""),
             "keep_alive": self.cfg.get("keep_alive", "15m"),
             "stream": False,
             "options": self.cfg["options"]
@@ -980,6 +984,8 @@ class DictationController:
             api = CONFIG['llm'].get('api', {})
             host = urlparse(api.get('base_url', BASE)).hostname or 'API'
             return f"Online · {host.replace('api.', '').replace('www.', '')} · {api.get('model', MODEL)}"
+        if not self._polisher.is_available():
+            return 'No cleanup engine yet · Set one up'
         return 'On this PC · Ollama ' + CONFIG['llm']['ollama']['model']
 
     def _engine_state(self):
@@ -1004,7 +1010,8 @@ class DictationController:
                 cfg = CONFIG['llm']['ollama']
                 r = requests.post(cfg['base_url'] + '/api/generate', json={
                     'model': choice['ollama_model'], 'prompt': f'<dictated_text>\n{sample}\n</dictated_text>',
-                    'system': cleanup_prompt(), 'stream': False, 'options': cfg['options']}, timeout=cfg['timeout'])
+                    'system': cleanup_prompt() + (EXAMPLES if cleanup_prompt() == SYSTEM_PROMPT and choice['ollama_model'] not in EXAMPLE_FREE_MODELS else ''),
+                    'stream': False, 'options': cfg['options']}, timeout=cfg['timeout'])
                 r.raise_for_status()
                 out = r.json().get('response', '').strip()
             else:
@@ -1055,6 +1062,7 @@ class DictationController:
                 updates_on=self._updates_on, set_updates_on=self._set_updates_on,
                 get_prompt=cleanup_prompt, default_prompt=lambda: SYSTEM_PROMPT, set_prompt=set_cleanup_prompt,
                 engine_state=self._engine_state, ollama_models=self._ollama_models,
+                cleanup_ready=lambda: self._polisher.is_available(),
                 test_engine=self._test_engine, save_engine=self._save_engine,
                 set_open_on_launch=lambda v: self._save_setting('ui', 'open_on_launch', bool(v))))
         if getattr(self, '_update', None):

@@ -733,34 +733,141 @@ PROVIDERS = [('OpenRouter', 'https://openrouter.ai/api/v1', 'nvidia/nemotron-3.5
              ('Other (OpenAI-compatible)', '', '')]
 
 
+class LocalPanel(QWidget):
+    """On this PC: install Ollama and download a recommended model with one click each. Nothing to do outside NuffSaid."""
+    def __init__(self, current, parent=None):
+        super().__init__(parent)
+        self.selected, self.worker, self.rows = current, None, {}
+        self.lay = QVBoxLayout(self); self.lay.setContentsMargins(0, 0, 0, 0); self.lay.setSpacing(0)
+        self.rebuild()
+
+    def clear(self):
+        while self.lay.count():
+            w = self.lay.takeAt(0).widget()
+            if w:
+                w.hide(); w.setParent(None); w.deleteLater()
+
+    def ready(self):
+        import ollama_setup as o
+        return self.selected in o.local_models()
+
+    def rebuild(self):
+        import ollama_setup as o
+        from first_run import Bar
+        self.clear(); self.rows = {}
+        if not o.installed():
+            self.lay.addWidget(label("Ollama isn't on this PC yet", body(15)))
+            self.lay.addSpacing(6)
+            self.lay.addWidget(label('Ollama is the free, open-source engine that runs cleanup on your PC. Private: your text never '
+                                     'leaves this PC. NuffSaid installs it for you, from ollama.com, and checks it is signed by Ollama.',
+                                     body(12), G, wrap=True))
+            self.lay.addSpacing(16)
+            size = o.installer_size()
+            self.install_btn = Pill(f"Install Ollama · {o.human(size)}" if size else 'Install Ollama')
+            self.install_btn.clicked.connect(self.install); self.lay.addWidget(self.install_btn, 0, Qt.AlignmentFlag.AlignLeft)
+            self.lay.addSpacing(12)
+            self.bar = Bar(); self.bar.hide(); self.lay.addWidget(self.bar)
+            self.note = label('Next you pick a model (about 2 GB). Or use Online API with your own key: nothing to install.', body(12), G2, wrap=True)
+            self.lay.addSpacing(8); self.lay.addWidget(self.note)
+            self.lay.addStretch(1)
+            return
+        if not o.running():
+            o.start()
+        have = o.local_models()
+        if self.selected not in have:
+            self.selected = next((m[0] for m in o.MODELS if m[0] in have), next(iter(have), o.MODELS[0][0]))
+        self.lay.addWidget(label('One model is all you need. Size is the one-time download.', mono(10), G)); self.lay.addSpacing(8)
+        models = list(o.MODELS)
+        for name in have:   # anything else the user already has
+            if name not in [m[0] for m in models]:
+                models.append((name, name, have[name], 'Already on this PC.'))
+        shown = [m for m in models if m[0] == o.RECOMMENDED or m[0] in have or m[0] == self.selected]
+        others = [m for m in models if m not in shown]
+        for name, title, size, desc in shown + (others if getattr(self, 'show_all', False) else []):
+            self.lay.addWidget(self.model_row(name, title, size, desc, name in have))
+        if others and not getattr(self, 'show_all', False):
+            more = Link('Other models', G); more.clicked.connect(lambda: (setattr(self, 'show_all', True), self.rebuild()))
+            self.lay.addSpacing(6); self.lay.addWidget(more, 0, Qt.AlignmentFlag.AlignLeft)
+        self.lay.addStretch(1)
+
+    def model_row(self, name, title, size, desc, present):
+        from first_run import Bar
+        import ollama_setup as o
+        row = QFrame(); row.setCursor(Qt.CursorShape.PointingHandCursor)
+        on = name == self.selected
+        row.setStyleSheet(f"QFrame {{ border:1px solid {W if on else LINE}; border-radius:8px; }} QLabel {{ border:none; }}")
+        h = QHBoxLayout(row); h.setContentsMargins(14, 10, 14, 10); h.setSpacing(12)
+        v = QVBoxLayout(); v.setSpacing(2)
+        v.addWidget(label(f"{title}  ·  {o.human(size)}", body(14)))
+        v.addWidget(label(desc, body(12), G))
+        bar = Bar(); bar.hide(); v.addWidget(bar)
+        h.addLayout(v, 1)
+        if present:
+            h.addWidget(label('Selected' if on else 'On this PC', mono(9), W if on else G))
+        else:
+            get = Pill('Download'); get.clicked.connect(lambda _=False, n=name: self.pull(n)); h.addWidget(get)
+        row.mousePressEvent = lambda e, n=name, p=present: self.select(n) if p else None
+        self.rows[name] = (row, bar)
+        return row
+
+    def select(self, name):
+        self.selected = name; self.rebuild()
+
+    def pulled(self, ok, msg, name):
+        """Switching replaces: offer to remove the models the user isn't using, so only one sits on the PC."""
+        import ollama_setup as o
+        if not ok:
+            self.status(msg); self.rebuild(); return
+        self.selected = name
+        extra = {n: sz for n, sz in o.local_models().items() if n != name}
+        if extra:
+            total = sum(extra.values())
+            box = QMessageBox(QMessageBox.Icon.NoIcon, 'Free up space',
+                              f"Remove {', '.join(extra)} to free {o.human(total)}? You only need one model.",
+                              QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, self.window())
+            if box.exec() == QMessageBox.StandardButton.Yes:
+                for n in extra:
+                    o.delete_model(n)
+        self.status('Downloaded. Press Test, then Save.')
+        self.rebuild()
+
+    def status(self, text):
+        dialog = self.window()
+        if hasattr(dialog, 'status'):
+            dialog.status.setText(text)
+
+    def install(self):
+        import ollama_setup as o
+        self.install_btn.setEnabled(False); self.bar.show()
+        self.worker = o.InstallOllama()
+        self.worker.progress.connect(lambda d, t: (self.bar.set(d / max(1, t)), self.status(f'Downloading Ollama · {o.human(d)} of {o.human(t)}')))
+        self.worker.status.connect(self.status)
+        self.worker.done.connect(lambda ok, msg: (self.status('Ollama is ready. Now pick a model.' if ok else msg), self.rebuild()))
+        self.worker.start()
+
+    def pull(self, name):
+        import ollama_setup as o
+        row, bar = self.rows[name]; bar.show()
+        self.worker = o.PullModel(name)
+        self.worker.progress.connect(lambda d, t: (bar.set(d / max(1, t)), self.status(f'Downloading {name} · {o.human(d)} of {o.human(t)}')))
+        self.worker.done.connect(lambda ok, msg, n=name: self.pulled(ok, msg, n))
+        self.worker.start()
+
+
 class EngineDialog(Sheet):
     """Choose where cleanup runs: on this PC (Ollama) or an online API with your own key."""
     def __init__(self, hooks, parent=None):
-        super().__init__(640, 560, parent)
+        super().__init__(640, 600, parent)
         from PyQt6.QtWidgets import QComboBox
         self.hooks, st = hooks, hooks['engine_state']()
-        Headline('CLEANUP ENGINE', 60, parent=self).move(36, 30)
+        Headline('CLEANUP ENGINE' if hooks.get('cleanup_ready', lambda: True)() else 'SET UP CLEANUP', 60, parent=self).move(36, 30)
         seg = QWidget(self); sl = QHBoxLayout(seg); sl.setContentsMargins(0, 0, 0, 0); sl.setSpacing(0)
         seg.setGeometry(36, 110, 568, 40)
         self.local_btn, self.api_btn = QPushButton('On this PC'), QPushButton('Online API')
         for b, v in ((self.local_btn, 'ollama'), (self.api_btn, 'api')):
             b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, v=v: self.set_mode(v)); sl.addWidget(b)
 
-        self.local = QWidget(self); self.local.setGeometry(36, 170, 568, 260)
-        ll = QVBoxLayout(self.local); ll.setContentsMargins(0, 0, 0, 0); ll.setSpacing(8)
-        ll.addWidget(label('Ollama model', mono(10), G))
-        self.models = QComboBox(); self.models.setFont(body(14)); ll.addWidget(self.models)
-        try:
-            names = hooks['ollama_models']() or []
-        except Exception:
-            names = []
-        self.models.addItems(names or [st['ollama_model']])
-        self.models.setCurrentText(st['ollama_model'])
-        ll.addSpacing(10)
-        ll.addWidget(label('Free and private: runs on your graphics card, nothing leaves your PC.\n'
-                           'Needs Ollama (ollama.com) with a model pulled.' + ('' if names else '\nOllama is not running right now.'),
-                           body(12), G, wrap=True))
-        ll.addStretch(1)
+        self.local = LocalPanel(st['ollama_model'], self); self.local.setGeometry(36, 166, 568, 270)
 
         self.api = QWidget(self); self.api.setGeometry(36, 170, 568, 260)
         al = QGridLayout(self.api); al.setContentsMargins(0, 0, 0, 0); al.setHorizontalSpacing(16); al.setVerticalSpacing(6)
@@ -781,10 +888,10 @@ class EngineDialog(Sheet):
         self.provider.setCurrentIndex(match)
         self.provider.currentIndexChanged.connect(self.pick_provider)
 
-        self.status = label('', body(12), G, self, wrap=True); self.status.setGeometry(36, 436, 568, 40)
-        test = Pill('Test', self); test.move(36, 498); test.clicked.connect(self.test)
-        cancel = Pill('Cancel', self); cancel.move(448, 498); cancel.clicked.connect(self.reject)
-        save = Pill('Save', self); save.move(530, 498); save.clicked.connect(self.save)
+        self.status = label('', body(12), G, self, wrap=True); self.status.setGeometry(36, 470, 568, 48)
+        test = Pill('Test', self); test.move(36, 538); test.clicked.connect(self.test)
+        cancel = Pill('Cancel', self); cancel.move(448, 538); cancel.clicked.connect(self.reject)
+        save = Pill('Save', self); save.move(530, 538); save.clicked.connect(self.save)
         save.setStyleSheet(f"QPushButton {{ color:{K}; background:{W}; border:1px solid {W}; border-radius:13px; padding:0 16px; }} QPushButton:hover {{ background:#dcdcdc; }}")
         self.set_mode(st['backend'])
 
@@ -805,11 +912,13 @@ class EngineDialog(Sheet):
 
     def choice(self):
         if self.mode == 'ollama':
-            return {'backend': 'ollama', 'ollama_model': self.models.currentText()}
+            return {'backend': 'ollama', 'ollama_model': self.local.selected}
         return {'backend': 'api', 'base_url': self.base.text().strip(), 'model': self.model.text().strip(), 'key': self.key.text().strip()}
 
     def test(self):
         c = self.choice()
+        if c['backend'] == 'ollama' and not self.local.ready():
+            self.status.setText('Download a model first.'); return
         if c['backend'] == 'api' and (not c['base_url'] or not c['model']):
             self.status.setText('Fill in the API address and model.'); return
         self.status.setText('Testing with a sample sentence…'); QApplication.processEvents()
@@ -819,6 +928,8 @@ class EngineDialog(Sheet):
 
     def save(self):
         c = self.choice()
+        if c['backend'] == 'ollama' and not self.local.ready():
+            self.status.setText('Download a model first, or switch to Online API.'); return
         if c['backend'] == 'api' and (not c['base_url'] or not c['model']):
             self.status.setText('Fill in the API address and model.'); return
         error = self.hooks['save_engine'](c)

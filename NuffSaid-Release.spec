@@ -9,7 +9,7 @@ from importlib import import_module
 datas = [('assets/nuffsaid.png', 'assets'), ('assets/nuffsaid.ico', 'assets'), ('assets/gel.png', 'assets'), ('assets/gel-frames-idle.png', 'assets'), ('assets/gel-frames-speak.png', 'assets'), ('assets/gel-frames-clean.png', 'assets'), ('gel.frag', '.')]
 datas += [(str(f), 'assets/fonts') for f in Path('assets/fonts').glob('*.*tf')]
 binaries = []
-hiddenimports = ['pynput.keyboard._win32', 'pynput.mouse._win32']
+hiddenimports = ['pynput.keyboard._win32', 'pynput.mouse._win32', 'ollama_setup', 'first_run']
 hiddenimports += collect_submodules('comtypes')
 
 tmp_ret = collect_all('faster_whisper')

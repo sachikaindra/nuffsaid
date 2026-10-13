@@ -19,8 +19,8 @@ stt:
 llm:
   backend: ollama
   ollama:
-    base_url: http://localhost:11434
-    model: llama3:instruct
+    base_url: http://127.0.0.1:11434
+    model: qwen2.5:3b
     timeout: 60
     options:
       temperature: 0.1
